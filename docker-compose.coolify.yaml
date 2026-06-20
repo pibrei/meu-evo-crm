@@ -117,6 +117,9 @@ services:
       RAILS_ENV: production
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      DOORKEEPER_JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      DOORKEEPER_JWT_ALGORITHM: hs256
+      DOORKEEPER_JWT_ISS: evo-auth-service
       EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
@@ -124,16 +127,28 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
-      AUTH_SERVICE_URL: https://crmapi.sify.com.br
       FRONTEND_URL: https://crm.sify.com.br
+      AUTH_SERVICE_URL: https://crmapi.sify.com.br
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_DOMAIN: ${SMTP_DOMAIN}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION:-plain}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO:-true}
+      MFA_ISSUER: EvoAI
       SIDEKIQ_CONCURRENCY: 10
+      ACTIVE_STORAGE_SERVICE: local
+    volumes:
+      - auth_storage:/rails/storage
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       evo_auth:
-        condition: service_started
+        condition: service_healthy
 
   # ---------------------------------------------------------------------------
   # CRM Service (Ruby / Rails)
