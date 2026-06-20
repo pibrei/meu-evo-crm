@@ -1,0 +1,343 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-evo_community}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # API Gateway (Nginx) — exposto em crmapi.sify.com.br
+  # ---------------------------------------------------------------------------
+  evo_gateway:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    depends_on:
+      evo_auth:
+        condition: service_healthy
+      evo_crm:
+        condition: service_healthy
+      evo_core:
+        condition: service_healthy
+      evo_processor:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Auth Service (Ruby / Rails)
+  # ---------------------------------------------------------------------------
+  evo_auth:
+    image: evoapicloud/evo-auth-service-community:latest
+    restart: unless-stopped
+    command: sh -c "bundle exec rails db:prepare && bundle exec rails s -p 3001 -b 0.0.0.0"
+    environment:
+      RAILS_ENV: production
+      RAILS_MAX_THREADS: 5
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      DOORKEEPER_JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      DOORKEEPER_JWT_ALGORITHM: hs256
+      DOORKEEPER_JWT_ISS: evo-auth-service
+      EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      FRONTEND_URL: https://crm.sify.com.br
+      AUTH_SERVICE_URL: https://crmapi.sify.com.br
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_DOMAIN: ${SMTP_DOMAIN}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION:-plain}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO:-true}
+      MFA_ISSUER: EvoAI
+      SIDEKIQ_CONCURRENCY: 10
+      ACTIVE_STORAGE_SERVICE: local
+    volumes:
+      - auth_storage:/rails/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  evo_auth_sidekiq:
+    image: evoapicloud/evo-auth-service-community:latest
+    restart: unless-stopped
+    command: sh -c "bundle exec sidekiq"
+    healthcheck:
+      disable: true
+    environment:
+      RAILS_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      SIDEKIQ_CONCURRENCY: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # CRM Service (Ruby / Rails)
+  # ---------------------------------------------------------------------------
+  evo_crm:
+    image: evoapicloud/evo-ai-crm-community:latest
+    restart: unless-stopped
+    command: sh -c "bundle exec rails db:prepare && bundle exec rails s -p 3000 -b 0.0.0.0"
+    environment:
+      RAILS_ENV: production
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      EVO_AUTH_SERVICE_URL: http://evo_auth:3001
+      EVO_AI_CORE_SERVICE_URL: http://evo_core:5555
+      BACKEND_URL: https://crmapi.sify.com.br
+      FRONTEND_URL: https://crm.sify.com.br
+      CORS_ORIGINS: https://crm.sify.com.br
+      DISABLE_TELEMETRY: "true"
+      LOG_LEVEL: info
+      ENABLE_ACCOUNT_SIGNUP: "true"
+      ENABLE_PUSH_RELAY_SERVER: "true"
+      ENABLE_INBOX_EVENTS: "true"
+      BOT_RUNTIME_URL: http://evo_bot_runtime:8080
+      BOT_RUNTIME_SECRET: ${BOT_RUNTIME_SECRET}
+      BOT_RUNTIME_POSTBACK_BASE_URL: https://crmapi.sify.com.br
+    volumes:
+      - crm_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      evo_auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/auth/sign_in"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  evo_crm_sidekiq:
+    image: evoapicloud/evo-ai-crm-community:latest
+    restart: unless-stopped
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    healthcheck:
+      disable: true
+    environment:
+      RAILS_ENV: production
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      EVO_AUTH_SERVICE_URL: http://evo_auth:3001
+      EVO_AI_CORE_SERVICE_URL: http://evo_core:5555
+      BOT_RUNTIME_URL: http://evo_bot_runtime:8080
+      BOT_RUNTIME_SECRET: ${BOT_RUNTIME_SECRET}
+      BOT_RUNTIME_POSTBACK_BASE_URL: https://crmapi.sify.com.br
+    volumes:
+      - crm_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Core Service (Go / Gin)
+  # ---------------------------------------------------------------------------
+  evo_core:
+    image: evoapicloud/evo-ai-core-service-community:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USERNAME:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DATABASE:-evo_community}
+      DB_SSLMODE: disable
+      DB_MAX_IDLE_CONNS: 10
+      DB_MAX_OPEN_CONNS: 100
+      DB_CONN_MAX_LIFETIME: 1h
+      DB_CONN_MAX_IDLE_TIME: 30m
+      PORT: "5555"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      JWT_SECRET_KEY: ${SECRET_KEY_BASE}
+      JWT_ALGORITHM: HS256
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      EVOLUTION_BASE_URL: http://evo_crm:3000
+      EVO_AUTH_BASE_URL: http://evo_auth:3001
+      AI_PROCESSOR_URL: http://evo_processor:8000
+      AI_PROCESSOR_VERSION: v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5555/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Processor Service (Python / FastAPI)
+  # ---------------------------------------------------------------------------
+  evo_processor:
+    image: evoapicloud/evo-ai-processor-community:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_CONNECTION_STRING: postgresql://${POSTGRES_USERNAME:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE:-evo_community}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_SSL: "false"
+      REDIS_DB: 0
+      REDIS_KEY_PREFIX: "a2a:"
+      REDIS_TTL: 3600
+      HOST: 0.0.0.0
+      PORT: "8000"
+      DEBUG: "false"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      EVOAI_CRM_API_TOKEN: ${EVOAI_CRM_API_TOKEN}
+      EVO_AI_CRM_URL: http://evo_crm:3000
+      CORE_SERVICE_URL: http://evo_core:5555/api/v1
+      APP_URL: https://crmapi.sify.com.br
+      API_URL: https://crmapi.sify.com.br
+      API_TITLE: Agent Processor Community
+      API_DESCRIPTION: Agent Processor Community for Evo AI
+      API_VERSION: 1.0.0
+      ORGANIZATION_NAME: Evo AI
+      TOOLS_CACHE_ENABLED: "true"
+      TOOLS_CACHE_TTL: 3600
+    volumes:
+      - processor_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Bot Runtime (Go / Gin)
+  # ---------------------------------------------------------------------------
+  evo_bot_runtime:
+    image: evoapicloud/evo-bot-runtime:latest
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      AI_PROCESSOR_URL: http://evo_processor:8000
+      BOT_RUNTIME_SECRET: ${BOT_RUNTIME_SECRET}
+      AI_CALL_TIMEOUT_SECONDS: 30
+    depends_on:
+      redis:
+        condition: service_healthy
+      evo_processor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Frontend (React/Vite) — build da fonte para gravar as URLs corretas
+  # exposto em crm.sify.com.br
+  # ---------------------------------------------------------------------------
+  evo_frontend:
+    build:
+      context: ./evo-ai-frontend-community
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://crmapi.sify.com.br
+        VITE_AUTH_API_URL: https://crmapi.sify.com.br
+        VITE_EVOAI_API_URL: https://crmapi.sify.com.br
+        VITE_AGENT_PROCESSOR_URL: https://crmapi.sify.com.br
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      evo_auth:
+        condition: service_healthy
+      evo_crm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
+  auth_storage:
+  crm_storage:
+  processor_logs:
