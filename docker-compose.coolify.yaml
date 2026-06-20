@@ -48,9 +48,9 @@ services:
       evo_core:
         condition: service_healthy
       evo_processor:
-        condition: service_healthy
+        condition: service_started
       evo_bot_runtime:
-        condition: service_healthy
+        condition: service_started
 
   # ---------------------------------------------------------------------------
   # Auth Service (Ruby / Rails)
