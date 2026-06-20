@@ -40,6 +40,12 @@ services:
     restart: unless-stopped
     ports:
       - "3030:3030"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:3030/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       evo_auth:
         condition: service_healthy
@@ -118,12 +124,16 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      AUTH_SERVICE_URL: https://crmapi.sify.com.br
+      FRONTEND_URL: https://crm.sify.com.br
       SIDEKIQ_CONCURRENCY: 10
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      evo_auth:
+        condition: service_started
 
   # ---------------------------------------------------------------------------
   # CRM Service (Ruby / Rails)
@@ -205,6 +215,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      evo_auth:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
@@ -301,7 +313,6 @@ services:
     environment:
       LISTEN_ADDR: 0.0.0.0:8080
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      AI_PROCESSOR_URL: http://evo_processor:8000
       BOT_RUNTIME_SECRET: ${BOT_RUNTIME_SECRET}
       AI_CALL_TIMEOUT_SECONDS: 30
     depends_on:
