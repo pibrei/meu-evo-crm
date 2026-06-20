@@ -193,6 +193,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       EVO_AUTH_SERVICE_URL: http://evo_auth:3001
       EVO_AI_CORE_SERVICE_URL: http://evo_core:5555
+      BACKEND_URL: https://crmapi.sify.com.br
+      FRONTEND_URL: https://crm.sify.com.br
+      CORS_ORIGINS: https://crm.sify.com.br
       BOT_RUNTIME_URL: http://evo_bot_runtime:8080
       BOT_RUNTIME_SECRET: ${BOT_RUNTIME_SECRET}
       BOT_RUNTIME_POSTBACK_BASE_URL: https://crmapi.sify.com.br
