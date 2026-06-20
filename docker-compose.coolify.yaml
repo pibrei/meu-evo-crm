@@ -247,7 +247,9 @@ services:
   # Processor Service (Python / FastAPI)
   # ---------------------------------------------------------------------------
   evo_processor:
-    image: evoapicloud/evo-ai-processor-community:latest
+    build:
+      context: ./evo-ai-processor-community
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_CONNECTION_STRING: postgresql://${POSTGRES_USERNAME:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DATABASE:-evo_community}
