@@ -49,6 +49,8 @@ services:
         condition: service_healthy
       evo_processor:
         condition: service_healthy
+      evo_bot_runtime:
+        condition: service_healthy
 
   # ---------------------------------------------------------------------------
   # Auth Service (Ruby / Rails)
@@ -320,7 +322,7 @@ services:
       VITE_APP_ENV: production
       VITE_API_URL: https://crmapi.sify.com.br
       VITE_AUTH_API_URL: https://crmapi.sify.com.br
-      VITE_WS_URL: https://crmapi.sify.com.br
+      VITE_WS_URL: wss://crmapi.sify.com.br
       VITE_EVOAI_API_URL: https://crmapi.sify.com.br
       VITE_AGENT_PROCESSOR_URL: https://crmapi.sify.com.br
     depends_on:
