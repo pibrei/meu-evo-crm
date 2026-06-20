@@ -308,21 +308,21 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
-  # Frontend (React/Vite) — build da fonte para gravar as URLs corretas
+  # Frontend (React/Vite) — imagem pronta com injeção de URLs em runtime
   # exposto em crm.sify.com.br
   # ---------------------------------------------------------------------------
   evo_frontend:
-    build:
-      context: ./evo-ai-frontend-community
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: https://crmapi.sify.com.br
-        VITE_AUTH_API_URL: https://crmapi.sify.com.br
-        VITE_EVOAI_API_URL: https://crmapi.sify.com.br
-        VITE_AGENT_PROCESSOR_URL: https://crmapi.sify.com.br
+    image: evoapicloud/evo-ai-frontend-community:latest
     restart: unless-stopped
     ports:
       - "5173:80"
+    environment:
+      VITE_APP_ENV: production
+      VITE_API_URL: https://crmapi.sify.com.br
+      VITE_AUTH_API_URL: https://crmapi.sify.com.br
+      VITE_WS_URL: https://crmapi.sify.com.br
+      VITE_EVOAI_API_URL: https://crmapi.sify.com.br
+      VITE_AGENT_PROCESSOR_URL: https://crmapi.sify.com.br
     depends_on:
       evo_auth:
         condition: service_healthy
