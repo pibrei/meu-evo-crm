@@ -281,6 +281,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      evo_core:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
