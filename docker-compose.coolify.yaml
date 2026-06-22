@@ -321,6 +321,40 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
+  # KB Search (RAG) — serviço próprio de busca vetorial sobre o pgvector.
+  # Consumido pelo agente do Evo como HTTP custom tool:
+  #   endpoint: http://evo_kb_search:8080/search   header: X-API-Key
+  # Não é exposto publicamente (só rede interna).
+  # ---------------------------------------------------------------------------
+  evo_kb_search:
+    build:
+      context: ./evo-kb-search
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-evo_community}
+      KB_API_KEY: ${KB_API_KEY}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-https://api.openai.com/v1}
+      EMBED_API_KEY: ${EMBED_API_KEY}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-3-small}
+      EMBED_DIM: ${EMBED_DIM:-1536}
+      QUERY_PREFIX: ${EMBED_QUERY_PREFIX:-}
+      DOC_PREFIX: ${EMBED_DOC_PREFIX:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
   # Bot Runtime (Go / Gin)
   # ---------------------------------------------------------------------------
   evo_bot_runtime:
